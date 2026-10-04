@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCQ Mastery - Extractor & Practice</title>
+
+    <!-- PWA Manifest & Theme -->
+    <meta name="theme-color" content="#000000">
+    <meta name="description" content="AI-Powered MCQ Extractor and Spaced Mastery Practice App">
+    <link rel="manifest" href='data:application/manifest+json,{"name":"MCQ Mastery","short_name":"MCQ Mastery","theme_color":"#000000","background_color":"#000000","display":"standalone","icons":[{"src":"https://img.icons8.com/isometric/512/brain.png","sizes":"512x512","type":"image/png"}]}'>
+
+    <!-- Tailwind CSS & Lucide Icons -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f5f3ff',
+                            100: '#ede9fe',
+                            400: '#a78bfa',
+                            500: '#8b5cf6',
+                            600: '#7c3aed',
+                            700: '#6d28d9',
+                            900: '#4c1d95',
+                            black: '#000000',
+                            card: '#09090b',
+                            border: '#1d1d21'
+                        }
+                    },
+                    animation: {
+                        'pulse-glow-green': 'glowGreen 1.5s infinite alternate',
+                        'pulse-glow-red': 'glowRed 1.5s infinite alternate',
+                        'pulse-glow-purple': 'glowPurple 2.5s infinite alternate',
+                    },
+                    keyframes: {
+                        glowGreen: {
+                            '0%': { boxShadow: '0 0 15px rgba(34, 197, 94, 0.2)' },
+                            '100%': { boxShadow: '0 0 35px rgba(34, 197, 94, 0.6)' },
+                        },
+                        glowRed: {
+                            '0%': { boxShadow: '0 0 15px rgba(239, 68, 68, 0.2)' },
+                            '100%': { boxShadow: '0 0 35px rgba(239, 68, 68, 0.6)' },
+                        },
+                        glowPurple: {
+                            '0%': { boxShadow: '0 0 15px rgba(139, 92, 246, 0.2)' },
+                            '100%': { boxShadow: '0 0 30px rgba(139, 92, 246, 0.45)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Firebase SDK Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.FirebaseModule = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, collection, doc, setDoc, getDocs, deleteDoc
+        };
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #000000;
+            color: #f4f4f5;
+        }
+        .glow-correct {
+            box-shadow: 0 0 40px 10px rgba(34, 197, 94, 0.35);
+            border-color: rgba(34, 197, 94, 0.6) !important;
+        }
+        .glow-incorrect {
+            box-shadow: 0 0 40px 10px rgba(239, 68, 68, 0.35);
+            border-color: rgba(239, 68, 68, 0.6) !important;
+        }
+        .glow-default {
+            box-shadow: 0 0 30px 2px rgba(139, 92, 246, 0.2);
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-black text-zinc-100 antialiased selection:bg-brand-600 selection:text-white">
+
+    <!-- Top Header Navigation -->
+    <header class="border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-brand-600/20 text-brand-400 rounded-xl border border-brand-500/30">
+                    <i data-lucide="zap" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-white flex items-center gap-2">
+                        MCQ <span class="text-brand-500">Mastery</span>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">PRO v2.5</span>
+                    </h1>
+                </div>
+            </div>
+
+            <!-- Header Controls & Network Status -->
+            <div class="flex items-center gap-2 sm:gap-4">
+                <div id="syncStatusBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-900 border border-zinc-800 text-zinc-400">
+                    <span id="syncDot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span id="syncText">Local Only</span>
+                </div>
+
+                <button id="syncNowBtn" onclick="app.syncCloud()" class="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 text-xs font-semibold rounded-lg transition-all active:scale-95">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-brand-400" id="syncIcon"></i>
+                    <span class="hidden sm:inline">Sync Cloud</span>
+                </button>
+
+                <button id="pwaInstallBtn" onclick="app.installPWA()" class="hidden flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-lg transition-all shadow-lg shadow-brand-600/20">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                    <span>Install App</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="bg-zinc-950 border-b border-zinc-800/60 sticky top-16 z-30">
+        <div class="max-w-7xl mx-auto px-4 flex gap-2 sm:gap-6 overflow-x-auto">
+            <button onclick="app.switchTab('extract')" id="tab-extract" class="py-3 px-3 text-sm font-semibold border-b-2 border-brand-500 text-brand-400 flex items-center gap-2 whitespace-nowrap">
+                <i data-lucide="sparkles" class="w-4 h-4"></i> Batch OCR Extractor
+            </button>
+            <button onclick="app.switchTab('practice')" id="tab-practice" class="py-3 px-3 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 flex items-center gap-2 whitespace-nowrap">
+                <i data-lucide="brain-circuit" class="w-4 h-4"></i> Mastery Practice 
+                <span id="practiceCountBadge" class="bg-brand-900/60 text-brand-300 text-xs px-2 py-0.5 rounded-full border border-brand-500/30">0</span>
+            </button>
+            <button onclick="app.switchTab('bank')" id="tab-bank" class="py-3 px-3 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 flex items-center gap-2 whitespace-nowrap">
+                <i data-lucide="database" class="w-4 h-4"></i> Question Bank 
+                <span id="totalCountBadge" class="bg-zinc-800 text-zinc-300 text-xs px-2 py-0.5 rounded-full">0</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
+
+        <!-- ================= EXTRACT TAB ================= -->
+        <section id="view-extract" class="space-y-6">
+            <div class="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i data-lucide="upload-cloud" class="text-brand-500 w-5 h-5"></i> Multi-Image Batch Queue
+                        </h2>
+                        <p class="text-xs text-zinc-400">Drag & drop multiple screenshots, paste (Ctrl+V) from clipboard, or click to browse.</p>
+                    </div>
+
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <button id="quickAddAllBtn" onclick="app.processBatchQueue(true)" class="hidden flex-1 sm:flex-none px-4 py-2 bg-gradient-to-r from-brand-600 to-brand-700 hover:from-brand-500 hover:to-brand-600 text-white font-semibold text-xs rounded-xl shadow-lg shadow-brand-600/30 flex items-center justify-center gap-2 transition-all active:scale-95">
+                            <i data-lucide="zap" class="w-4 h-4"></i> Extract & Add All directly
+                        </button>
+                        <button id="processBatchBtn" onclick="app.processBatchQueue(false)" class="hidden flex-1 sm:flex-none px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-semibold text-xs rounded-xl border border-zinc-700 flex items-center justify-center gap-2 transition-all">
+                            <i data-lucide="edit-3" class="w-4 h-4"></i> Extract & Review Each
+                        </button>
+                    </div>
+                </div>
+
+                <div id="dropZone" class="border-2 border-dashed border-zinc-800 hover:border-brand-500/50 bg-zinc-900/40 rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[180px]">
+                    <input type="file" id="fileInput" multiple accept="image/*" class="hidden" onchange="app.handleFileSelect(event)">
+                    <div class="p-3 bg-brand-500/10 rounded-full text-brand-400 mb-3 border border-brand-500/20">
+                        <i data-lucide="image-plus" class="w-8 h-8"></i>
+                    </div>
+                    <p class="text-sm font-medium text-zinc-200">Drop multiple images here, or <span class="text-brand-400 underline">browse files</span></p>
+                    <p class="text-xs text-zinc-500 mt-1">Supports PNG, JPG, WEBP. You can also press <kbd class="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-zinc-300">Ctrl + V</kbd> anywhere on screen.</p>
+                </div>
+
+                <div id="queueContainer" class="hidden mt-6">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Queue (<span id="queueCount">0</span>)</span>
+                        <button onclick="app.clearQueue()" class="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear Queue
+                        </button>
+                    </div>
+                    <div id="queueGrid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 max-h-48 overflow-y-auto p-1"></div>
+                </div>
+            </div>
+
+            <div id="extractionStatusOverlay" class="hidden bg-zinc-950/90 border border-brand-500/30 rounded-2xl p-6 shadow-2xl text-center space-y-4">
+                <div class="inline-flex p-3 bg-brand-600/20 text-brand-400 rounded-full border border-brand-500/30 animate-spin">
+                    <i data-lucide="loader-2" class="w-8 h-8"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-white" id="statusTitle">Extracting Questions via Gemini Vision...</h3>
+                    <p class="text-xs text-zinc-400 mt-1" id="statusDetail">Processing image 1 of 3...</p>
+                </div>
+                <div class="w-full bg-zinc-900 rounded-full h-2 overflow-hidden border border-zinc-800">
+                    <div id="statusProgressBar" class="bg-gradient-to-r from-brand-600 to-brand-400 h-2 w-0 transition-all duration-300"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= PRACTICE TAB ================= -->
+        <section id="view-practice" class="hidden space-y-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold text-brand-400 uppercase tracking-wide">Active Practice Session</span>
+                        <span id="streakBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">
+                            🔥 0 Streak
+                        </span>
+                    </div>
+                    <p class="text-xs text-zinc-400 mt-0.5">Answer correctly 5 times total to complete mastery of each question.</p>
+                </div>
+
+                <div class="flex items-center gap-3 w-full sm:w-auto justify-between">
+                    <div class="text-right text-xs">
+                        <span class="text-zinc-400">Mastered:</span>
+                        <span id="masteredCountText" class="font-bold text-emerald-400 ml-1">0/0</span>
+                    </div>
+                    <button onclick="app.resetMasteryProgress()" class="text-xs px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 rounded-lg flex items-center gap-1">
+                        <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Reset All Progress
+                    </button>
+                </div>
+            </div>
+
+            <div class="relative max-w-3xl mx-auto py-2">
+                <div id="cardGlowEffect" class="absolute -inset-1 bg-gradient-to-r from-brand-600/30 to-purple-600/30 rounded-3xl blur-xl opacity-60 transition-all duration-500"></div>
+
+                <div id="practiceCard" class="relative bg-zinc-950 border border-zinc-800/90 rounded-2xl p-6 sm:p-8 shadow-2xl transition-all duration-300 min-h-[380px] flex flex-col justify-between">
+                    <div id="practiceEmptyState" class="hidden text-center py-16 space-y-4">
+                        <div class="p-4 bg-emerald-500/10 text-emerald-400 rounded-full inline-block border border-emerald-500/20">
+                            <i data-lucide="award" class="w-12 h-12"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">Deck Fully Mastered! 🎉</h3>
+                        <p class="text-sm text-zinc-400 max-w-md mx-auto">You've reached 5 correct answers for all questions in this bank! Reset progress or add new questions to continue.</p>
+                        <button onclick="app.resetMasteryProgress()" class="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl transition-all">
+                            Restart Practice Session
+                        </button>
+                    </div>
+
+                    <div id="practiceCardContent" class="space-y-6">
+                        <div class="flex justify-between items-center pb-3 border-b border-zinc-800/60">
+                            <span class="text-xs font-medium text-zinc-400" id="cardMasteryLevel">Mastery Level: 0/5</span>
+                            <div id="cardStreakDots" class="flex gap-1">
+                                <span class="w-2.5 h-2.5 rounded-full bg-zinc-800"></span>
+                                <span class="w-2.5 h-2.5 rounded-full bg-zinc-800"></span>
+                                <span class="w-2.5 h-2.5 rounded-full bg-zinc-800"></span>
+                                <span class="w-2.5 h-2.5 rounded-full bg-zinc-800"></span>
+                                <span class="w-2.5 h-2.5 rounded-full bg-zinc-800"></span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 id="cardQuestionText" class="text-lg sm:text-xl font-semibold text-zinc-100 leading-snug">
+                                Loading Question...
+                            </h3>
+                        </div>
+
+                        <div id="cardOptionsGrid" class="space-y-2.5"></div>
+
+                        <div id="cardFeedbackPanel" class="hidden pt-4 border-t border-zinc-800/80 space-y-4">
+                            <div id="cardFeedbackBadge" class="p-3 rounded-xl text-sm font-semibold flex items-center gap-2"></div>
+                            <div id="cardExplanationText" class="text-xs text-zinc-400 bg-zinc-900/80 p-3 rounded-xl border border-zinc-800 hidden"></div>
+                            <div id="cardRevealedImageWrapper" class="hidden space-y-2">
+                                <span class="text-xs font-semibold text-zinc-400 flex items-center gap-1">
+                                    <i data-lucide="image" class="w-3.5 h-3.5 text-brand-400"></i> Original Source Screenshot:
+                                </span>
+                                <div class="p-2 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden max-h-60 flex justify-center">
+                                    <img id="cardRevealedImg" src="" alt="Source Screenshot" class="object-contain max-h-56 rounded-lg">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="cardFooterActions" class="mt-6 flex justify-end">
+                        <button id="nextCardBtn" onclick="app.nextPracticeQuestion()" class="hidden px-6 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-brand-600/30 flex items-center gap-2 transition-all">
+                            Next Question <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= QUESTION BANK TAB ================= -->
+        <section id="view-bank" class="hidden space-y-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                <div>
+                    <h2 class="text-base font-bold text-white">Stored Questions (<span id="bankTotalText">0</span>)</h2>
+                    <p class="text-xs text-zinc-400">Manage, edit, or remove questions saved in your local & synchronized bank.</p>
+                </div>
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <button onclick="app.clearAllQuestions()" class="text-xs px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg flex items-center gap-1.5 transition-all">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear All
+                    </button>
+                </div>
+            </div>
+
+            <div id="bankList" class="space-y-4"></div>
+        </section>
+
+    </main>
+
+    <!-- Manual Question Editor / Verification Modal -->
+    <div id="fixerModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-5 shadow-2xl">
+            <div class="flex justify-between items-center border-b border-zinc-800 pb-3">
+                <h3 class="font-bold text-white text-base flex items-center gap-2">
+                    <i data-lucide="edit-3" class="text-brand-400 w-4 h-4"></i> Verify Extracted Question
+                </h3>
+                <button onclick="app.closeFixerModal()" class="text-zinc-400 hover:text-white p-1">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div id="modalImagePreview" class="p-2 bg-zinc-900 rounded-xl border border-zinc-800 max-h-48 overflow-hidden flex justify-center">
+                <img id="modalImg" src="" alt="Extracted Image" class="object-contain max-h-44 rounded">
+            </div>
+
+            <div class="space-y-4 text-xs">
+                <div>
+                    <label class="block font-semibold text-zinc-300 mb-1">Question Prompt</label>
+                    <textarea id="editQuestionText" rows="3" class="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl p-3 text-zinc-100 focus:border-brand-500 focus:outline-none"></textarea>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block font-semibold text-zinc-300">Options & Correct Key Selection</label>
+                    <div id="editOptionsContainer" class="space-y-2"></div>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-zinc-300 mb-1">Explanation (Optional)</label>
+                    <input type="text" id="editExplanation" placeholder="Brief rationale..." class="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl p-2.5 text-zinc-100 focus:border-brand-500 focus:outline-none">
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-3 border-t border-zinc-800">
+                <button onclick="app.closeFixerModal()" class="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-semibold rounded-xl border border-zinc-700">
+                    Cancel
+                </button>
+                <button onclick="app.saveModalQuestion()" class="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-brand-600/30">
+                    Save to Question Bank
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class MCQApp {
+            constructor() {
+                this.questions = [];
+                this.uploadQueue = [];
+                this.activeQuestionIndex = 0;
+                this.activeTab = 'extract';
+                this.deferredPrompt = null;
+                this.db = null;
+                this.auth = null;
+                this.userId = null;
+                this.appId = typeof __app_id !== 'undefined' ? __app_id : 'mcq-mastery-default';
+                this.currentFixerData = null;
+                this.sessionStreak = 0;
+
+                this.loadLocalStorage();
+            }
+
+            async init() {
+                lucide.createIcons();
+                this.setupDragAndDrop();
+                this.setupClipboardPaste();
+                this.setupPWA();
+                this.updateUI();
+                await this.initFirebase();
+            }
+
+            async initFirebase() {
+                try {
+                    if (typeof __firebase_config !== 'undefined' && window.FirebaseModule) {
+                        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, getFirestore } = window.FirebaseModule;
+                        const firebaseConfig = {
+                            apiKey: "AIzaSyDdLSF_rylm0N2dajS-jpWSBwQpsJY7MpI",
+                            authDomain: "my-mcq-app-710bf.firebaseapp.com",
+                            projectId: "my-mcq-app-710bf",
+                            storageBucket: "my-mcq-app-710bf.firebasestorage.app",
+                            messagingSenderId: "802433365235",
+                            appId: "1:802433365235:web:eb7cc4618805a0db293386",
+                            measurementId: "G-LPG0DBNZCD"
+                        };
+                        const app = initializeApp(firebaseConfig);
+                        this.auth = getAuth(app);
+                        this.db = getFirestore(app);
+
+                        let userCredential;
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            userCredential = await signInWithCustomToken(this.auth, __initial_auth_token);
+                        } else {
+                            userCredential = await signInAnonymously(this.auth);
+                        }
+                        this.userId = userCredential.user.uid;
+                        this.updateSyncBadge('online', 'Cloud Sync Ready');
+                    } else {
+                        this.updateSyncBadge('offline', 'Local Mode Only');
+                    }
+                } catch (err) {
+                    console.warn("Firebase initialized in fallback mode:", err);
+                    this.updateSyncBadge('offline', 'Offline Mode');
+                }
+            }
+
+            updateSyncBadge(status, text) {
+                const dot = document.getElementById('syncDot');
+                const label = document.getElementById('syncText');
+                if (status === 'online') {
+                    dot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+                    label.textContent = text || 'Synced';
+                } else if (status === 'syncing') {
+                    dot.className = 'w-2 h-2 rounded-full bg-brand-400 animate-ping';
+                    label.textContent = 'Syncing...';
+                } else {
+                    dot.className = 'w-2 h-2 rounded-full bg-zinc-600';
+                    label.textContent = text || 'Offline';
+                }
+            }
+
+            async syncCloud() {
+                if (!this.db || !this.userId) {
+                    alert("Cloud sync service unavailable. Working in local offline storage mode.");
+                    return;
+                }
+
+                const icon = document.getElementById('syncIcon');
+                icon.classList.add('animate-spin');
+                this.updateSyncBadge('syncing');
+
+                try {
+                    const { collection, doc, setDoc, getDocs } = window.FirebaseModule;
+                    const colPath = `artifacts/${this.appId}/users/${this.userId}/mcq_questions`;
+                    const colRef = collection(this.db, colPath);
+
+                    for (const q of this.questions) {
+                        await setDoc(doc(colRef, q.id), q, { merge: true });
+                    }
+
+                    const snapshot = await getDocs(colRef);
+                    const cloudQuestions = [];
+                    snapshot.forEach(docSnap => cloudQuestions.push(docSnap.data()));
+
+                    if (cloudQuestions.length > 0) {
+                        const map = new Map();
+                        this.questions.forEach(q => map.set(q.id, q));
+                        cloudQuestions.forEach(q => map.set(q.id, q));
+                        this.questions = Array.from(map.values());
+                        this.saveLocalStorage();
+                    }
+
+                    this.updateSyncBadge('online', 'Cloud Synced');
+                } catch (e) {
+                    console.error("Cloud Sync Error:", e);
+                    this.updateSyncBadge('offline', 'Sync Failed');
+                } finally {
+                    icon.classList.remove('animate-spin');
+                    this.updateUI();
+                }
+            }
+
+            loadLocalStorage() {
+                const stored = localStorage.getItem('mcq_mastery_questions');
+                if (stored) {
+                    try {
+                        this.questions = JSON.parse(stored);
+                    } catch (e) {
+                        this.questions = [];
+                    }
+                }
+            }
+
+            saveLocalStorage() {
+                localStorage.setItem('mcq_mastery_questions', JSON.stringify(this.questions));
+                this.updateUI();
+            }
+
+            updateUI() {
+                document.getElementById('totalCountBadge').textContent = this.questions.length;
+                document.getElementById('bankTotalText').textContent = this.questions.length;
+
+                const activeQuestions = this.questions.filter(q => (q.masteryStreak || 0) < 5);
+                document.getElementById('practiceCountBadge').textContent = activeQuestions.length;
+
+                this.renderQueue();
+                this.renderBankList();
+            }
+
+            switchTab(tab) {
+                this.activeTab = tab;
+                ['extract', 'practice', 'bank'].forEach(t => {
+                    const view = document.getElementById(`view-${t}`);
+                    const tabBtn = document.getElementById(`tab-${t}`);
+                    if (t === tab) {
+                        view.classList.remove('hidden');
+                        tabBtn.classList.add('border-brand-500', 'text-brand-400');
+                        tabBtn.classList.remove('border-transparent', 'text-zinc-400');
+                    } else {
+                        view.classList.add('hidden');
+                        tabBtn.classList.remove('border-brand-500', 'text-brand-400');
+                        tabBtn.classList.add('border-transparent', 'text-zinc-400');
+                    }
+                });
+
+                if (tab === 'practice') {
+                    this.loadPracticeCard();
+                }
+            }
+
+            setupDragAndDrop() {
+                const dropZone = document.getElementById('dropZone');
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, (e) => {
+                        e.preventDefault();
+                        dropZone.classList.add('border-brand-500', 'bg-brand-500/5');
+                    }, false);
+                });
+                ['dragleave', 'drop'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, (e) => {
+                        e.preventDefault();
+                        dropZone.classList.remove('border-brand-500', 'bg-brand-500/5');
+                    }, false);
+                });
+                dropZone.addEventListener('drop', (e) => {
+                    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+                    this.addFilesToQueue(files);
+                });
+                dropZone.addEventListener('click', () => {
+                    document.getElementById('fileInput').click();
+                });
+            }
+
+            setupClipboardPaste() {
+                window.addEventListener('paste', (e) => {
+                    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                    const files = [];
+                    for (let item of items) {
+                        if (item.kind === 'file' && item.type.startsWith('image/')) {
+                            files.push(item.getAsFile());
+                        }
+                    }
+                    if (files.length > 0) {
+                        this.addFilesToQueue(files);
+                    }
+                });
+            }
+
+            setupPWA() {
+                window.addEventListener('beforeinstallprompt', (e) => {
+                    e.preventDefault();
+                    this.deferredPrompt = e;
+                    document.getElementById('pwaInstallBtn').classList.remove('hidden');
+                });
+            }
+
+            installPWA() {
+                if (this.deferredPrompt) {
+                    this.deferredPrompt.prompt();
+                    this.deferredPrompt.userChoice.then(() => {
+                        this.deferredPrompt = null;
+                        document.getElementById('pwaInstallBtn').classList.add('hidden');
+                    });
+                }
+            }
+
+            handleFileSelect(event) {
+                const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
+                this.addFilesToQueue(files);
+                event.target.value = '';
+            }
+
+            addFilesToQueue(files) {
+                files.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        this.uploadQueue.push({
+                            id: 'q_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                            dataUrl: e.target.result
+                        });
+                        this.renderQueue();
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            removeFromQueue(id) {
+                this.uploadQueue = this.uploadQueue.filter(item => item.id !== id);
+                this.renderQueue();
+            }
+
+            clearQueue() {
+                this.uploadQueue = [];
+                this.renderQueue();
+            }
+
+            renderQueue() {
+                const container = document.getElementById('queueContainer');
+                const grid = document.getElementById('queueGrid');
+                const count = document.getElementById('queueCount');
+                const quickAddBtn = document.getElementById('quickAddAllBtn');
+                const processBtn = document.getElementById('processBatchBtn');
+
+                count.textContent = this.uploadQueue.length;
+
+                if (this.uploadQueue.length === 0) {
+                    container.classList.add('hidden');
+                    quickAddBtn.classList.add('hidden');
+                    processBtn.classList.add('hidden');
+                    return;
+                }
+
+                container.classList.remove('hidden');
+                quickAddBtn.classList.remove('hidden');
+                processBtn.classList.remove('hidden');
+
+                grid.innerHTML = this.uploadQueue.map(item => `
+                    <div class="relative group aspect-square rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900">
+                        <img src="${item.dataUrl}" class="w-full h-full object-cover">
+                        <button onclick="app.removeFromQueue('${item.id}')" class="absolute top-1 right-1 p-1 bg-black/70 text-rose-400 hover:text-rose-300 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                `).join('');
+
+                lucide.createIcons();
+            }
+
+            async processBatchQueue(directAdd = false) {
+                if (this.uploadQueue.length === 0) return;
+
+                const overlay = document.getElementById('extractionStatusOverlay');
+                const title = document.getElementById('statusTitle');
+                const detail = document.getElementById('statusDetail');
+                const progressBar = document.getElementById('statusProgressBar');
+
+                overlay.classList.remove('hidden');
+
+                const total = this.uploadQueue.length;
+                let processed = 0;
+
+                for (let i = 0; i < total; i++) {
+                    const item = this.uploadQueue[i];
+                    detail.textContent = `Processing image ${i + 1} of ${total}...`;
+                    progressBar.style.width = `${((i + 1) / total) * 100}%`;
+
+                    try {
+                        const extracted = await this.mockOcrExtraction(item.dataUrl);
+
+                        if (directAdd) {
+                            const newQ = {
+                                id: 'q_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                                question: extracted.question,
+                                options: extracted.options,
+                                correctKey: extracted.correctKey,
+                                explanation: extracted.explanation || '',
+                                image: item.dataUrl,
+                                masteryStreak: 0
+                            };
+                            this.questions.push(newQ);
+                        } else {
+                            overlay.classList.add('hidden');
+                            this.openFixerModal({
+                                ...extracted,
+                                image: item.dataUrl
+                            });
+                            this.uploadQueue.splice(i, 1);
+                            this.renderQueue();
+                            return;
+                        }
+                    } catch (e) {
+                        console.error("Extraction error:", e);
+                    }
+
+                    processed++;
+                }
+
+                overlay.classList.add('hidden');
+                this.uploadQueue = [];
+                this.saveLocalStorage();
+                this.switchTab('bank');
+            }
+
+            async mockOcrExtraction(dataUrl) {
+    // Extract base64 string and mime type from image data URL
+    const matches = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (!matches) {
+        throw new Error("Invalid image format");
+    }
+
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+
+    // Prompt for Gemini to parse MCQs strictly as JSON
+    const promptText = `
+        Analyze this image containing a multiple choice question (MCQ).
+        Extract the following and return ONLY a valid JSON object matching this structure:
+        {
+          "question": "Clear text of the question prompt",
+          "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
+          "correctKey": "A, B, C, or D (choose the most accurate correct option key)",
+          "explanation": "Brief 1-sentence explanation of why this answer is correct"
+        }
+        Return strictly raw JSON without markdown formatting, code blocks, or preamble.
+    `;
+
+    // Replace YOUR_GEMINI_API_KEY with your actual Gemini API key
+    const apiKey = "YOUR_GEMINI_API_KEY"; 
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            contents: [{
+                parts: [
+                    { text: promptText },
+                    {
+                        inline_data: {
+                            mime_type: mimeType,
+                            data: base64Data
+                        }
+                    }
+                ]
+            }]
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Gemini API Error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    let rawText = data.candidates[0].content.parts[0].text;
+
+    // Clean JSON response
+    rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    return JSON.parse(rawText);
+}
+            openFixerModal(data) {
+                this.currentFixerData = data;
+                document.getElementById('modalImg').src = data.image || '';
+                document.getElementById('editQuestionText').value = data.question || '';
+                document.getElementById('editExplanation').value = data.explanation || '';
+
+                const container = document.getElementById('editOptionsContainer');
+                const keys = ['A', 'B', 'C', 'D'];
+                container.innerHTML = keys.map((key, idx) => {
+                    const val = (data.options && data.options[idx]) ? data.options[idx] : '';
+                    const isChecked = (data.correctKey === key || (!data.correctKey && idx === 0)) ? 'checked' : '';
+                    return `
+                        <div class="flex items-center gap-2">
+                            <input type="radio" name="correctKeyRadio" value="${key}" ${isChecked} class="accent-brand-500">
+                            <span class="font-bold text-zinc-400 w-4">${key}.</span>
+                            <input type="text" value="${val}" class="opt-input flex-1 bg-zinc-900 border border-zinc-700/80 rounded-lg p-2 text-zinc-100 focus:border-brand-500 focus:outline-none">
+                        </div>
+                    `;
+                }).join('');
+
+                document.getElementById('fixerModal').classList.remove('hidden');
+            }
+
+            closeFixerModal() {
+                document.getElementById('fixerModal').classList.add('hidden');
+                this.currentFixerData = null;
+            }
+
+            saveModalQuestion() {
+                const questionText = document.getElementById('editQuestionText').value.trim();
+                const explanation = document.getElementById('editExplanation').value.trim();
+                const selectedRadio = document.querySelector('input[name="correctKeyRadio"]:checked');
+                const correctKey = selectedRadio ? selectedRadio.value : 'A';
+
+                const optInputs = document.querySelectorAll('.opt-input');
+                const options = Array.from(optInputs).map(inp => inp.value.trim());
+
+                if (!questionText) {
+                    alert("Please enter a question prompt.");
+                    return;
+                }
+
+                const newQ = {
+                    id: this.currentFixerData?.id || ('q_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
+                    question: questionText,
+                    options: options,
+                    correctKey: correctKey,
+                    explanation: explanation,
+                    image: this.currentFixerData?.image || '',
+                    masteryStreak: this.currentFixerData?.masteryStreak || 0
+                };
+
+                const existingIdx = this.questions.findIndex(q => q.id === newQ.id);
+                if (existingIdx >= 0) {
+                    this.questions[existingIdx] = newQ;
+                } else {
+                    this.questions.push(newQ);
+                }
+
+                this.saveLocalStorage();
+                this.closeFixerModal();
+            }
+
+            loadPracticeCard() {
+                const active = this.questions.filter(q => (q.masteryStreak || 0) < 5);
+                const masteredCount = this.questions.filter(q => (q.masteryStreak || 0) >= 5).length;
+
+                document.getElementById('masteredCountText').textContent = `${masteredCount}/${this.questions.length}`;
+                document.getElementById('streakBadge').textContent = `🔥 ${this.sessionStreak} Streak`;
+
+                const emptyState = document.getElementById('practiceEmptyState');
+                const cardContent = document.getElementById('practiceCardContent');
+                const footerActions = document.getElementById('cardFooterActions');
+
+                if (active.length === 0) {
+                    emptyState.classList.remove('hidden');
+                    cardContent.classList.add('hidden');
+                    footerActions.classList.add('hidden');
+                    return;
+                }
+
+                emptyState.classList.add('hidden');
+                cardContent.classList.remove('hidden');
+                footerActions.classList.remove('hidden');
+
+                if (this.activeQuestionIndex >= active.length) {
+                    this.activeQuestionIndex = 0;
+                }
+
+                const current = active[this.activeQuestionIndex];
+                document.getElementById('cardQuestionText').textContent = current.question;
+                document.getElementById('cardMasteryLevel').textContent = `Mastery Level: ${current.masteryStreak || 0}/5`;
+
+                const dots = document.getElementById('cardStreakDots').children;
+                for (let i = 0; i < 5; i++) {
+                    if (i < (current.masteryStreak || 0)) {
+                        dots[i].className = 'w-2.5 h-2.5 rounded-full bg-brand-400';
+                    } else {
+                        dots[i].className = 'w-2.5 h-2.5 rounded-full bg-zinc-800';
+                    }
+                }
+
+                document.getElementById('cardFeedbackPanel').classList.add('hidden');
+                document.getElementById('nextCardBtn').classList.add('hidden');
+
+                const keys = ['A', 'B', 'C', 'D'];
+                const grid = document.getElementById('cardOptionsGrid');
+                grid.innerHTML = current.options.map((opt, idx) => {
+                    const key = keys[idx];
+                    return `
+                        <button onclick="app.submitAnswer('${key}')" class="opt-btn w-full text-left p-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800/80 border border-zinc-800 text-sm font-medium transition-all flex items-center gap-3 group">
+                            <span class="w-7 h-7 rounded-lg bg-zinc-800 text-zinc-400 font-bold flex items-center justify-center text-xs group-hover:bg-brand-600/20 group-hover:text-brand-400 transition-colors">${key}</span>
+                            <span class="text-zinc-200 flex-1">${opt}</span>
+                        </button>
+                    `;
+                }).join('');
+            }
+
+            submitAnswer(selectedKey) {
+                const active = this.questions.filter(q => (q.masteryStreak || 0) < 5);
+                const current = active[this.activeQuestionIndex];
+                if (!current) return;
+
+                const isCorrect = selectedKey === current.correctKey;
+                const feedbackPanel = document.getElementById('cardFeedbackPanel');
+                const feedbackBadge = document.getElementById('cardFeedbackBadge');
+                const explanationText = document.getElementById('cardExplanationText');
+                const revealedWrapper = document.getElementById('cardRevealedImageWrapper');
+                const revealedImg = document.getElementById('cardRevealedImg');
+                const glow = document.getElementById('cardGlowEffect');
+
+                if (isCorrect) {
+                    current.masteryStreak = (current.masteryStreak || 0) + 1;
+                    this.sessionStreak++;
+                    feedbackBadge.className = 'p-3 rounded-xl text-sm font-semibold flex items-center gap-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                    feedbackBadge.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5"></i> Correct! Mastery streak increased.`;
+                    glow.className = 'absolute -inset-1 bg-gradient-to-r from-emerald-600/40 to-teal-600/40 rounded-3xl blur-xl opacity-80 transition-all duration-500';
+                } else {
+                    current.masteryStreak = 0;
+                    this.sessionStreak = 0;
+                    feedbackBadge.className = 'p-3 rounded-xl text-sm font-semibold flex items-center gap-2 bg-rose-500/10 text-rose-400 border border-rose-500/20';
+                    feedbackBadge.innerHTML = `<i data-lucide="x-circle" class="w-5 h-5"></i> Incorrect. Correct Answer: ${current.correctKey}`;
+                    glow.className = 'absolute -inset-1 bg-gradient-to-r from-rose-600/40 to-red-600/40 rounded-3xl blur-xl opacity-80 transition-all duration-500';
+                }
+
+                if (current.explanation) {
+                    explanationText.textContent = current.explanation;
+                    explanationText.classList.remove('hidden');
+                } else {
+                    explanationText.classList.add('hidden');
+                }
+
+                if (current.image) {
+                    revealedImg.src = current.image;
+                    revealedWrapper.classList.remove('hidden');
+                } else {
+                    revealedWrapper.classList.add('hidden');
+                }
+
+                feedbackPanel.classList.remove('hidden');
+                document.getElementById('nextCardBtn').classList.remove('hidden');
+
+                const optBtns = document.querySelectorAll('.opt-btn');
+                optBtns.forEach(btn => btn.disabled = true);
+
+                this.saveLocalStorage();
+                lucide.createIcons();
+            }
+
+            nextPracticeQuestion() {
+                const glow = document.getElementById('cardGlowEffect');
+                glow.className = 'absolute -inset-1 bg-gradient-to-r from-brand-600/30 to-purple-600/30 rounded-3xl blur-xl opacity-60 transition-all duration-500';
+
+                const active = this.questions.filter(q => (q.masteryStreak || 0) < 5);
+                if (active.length > 0) {
+                    this.activeQuestionIndex = (this.activeQuestionIndex + 1) % active.length;
+                }
+                this.loadPracticeCard();
+            }
+
+            resetMasteryProgress() {
+                this.questions.forEach(q => q.masteryStreak = 0);
+                this.sessionStreak = 0;
+                this.saveLocalStorage();
+                this.loadPracticeCard();
+            }
+
+            renderBankList() {
+                const list = document.getElementById('bankList');
+                if (this.questions.length === 0) {
+                    list.innerHTML = `
+                        <div class="text-center py-12 bg-zinc-950 border border-zinc-800 rounded-2xl text-zinc-500 text-xs">
+                            No stored questions yet. Extract questions using the OCR tab above.
+                        </div>
+                    `;
+                    return;
+                }
+
+                const keys = ['A', 'B', 'C', 'D'];
+                list.innerHTML = this.questions.map(q => `
+                    <div class="p-5 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-3">
+                        <div class="flex justify-between items-start gap-4">
+                            <h4 class="font-semibold text-zinc-100 text-sm flex-1">${q.question}</h4>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                                    Streak: ${q.masteryStreak || 0}/5
+                                </span>
+                                <button onclick="app.editQuestion('${q.id}')" class="p-1.5 text-zinc-400 hover:text-zinc-200 bg-zinc-900 rounded-lg border border-zinc-800">
+                                    <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                                <button onclick="app.deleteQuestion('${q.id}')" class="p-1.5 text-rose-400 hover:text-rose-300 bg-rose-500/10 rounded-lg border border-rose-500/20">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            ${(q.options || []).map((opt, idx) => `
+                                <div class="p-2.5 rounded-xl border ${keys[idx] === q.correctKey ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400'}">
+                                    <span class="font-bold mr-1">${keys[idx]}.</span>${opt}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('');
+
+                lucide.createIcons();
+            }
+
+            editQuestion(id) {
+                const q = this.questions.find(item => item.id === id);
+                if (q) {
+                    this.openFixerModal(q);
+                }
+            }
+
+            deleteQuestion(id) {
+                this.questions = this.questions.filter(q => q.id !== id);
+                this.saveLocalStorage();
+            }
+
+            clearAllQuestions() {
+                if (confirm("Are you sure you want to clear all stored questions?")) {
+                    this.questions = [];
+                    this.saveLocalStorage();
+                }
+            }
+        }
+
+        const app = new MCQApp();
+        window.app = app;
+        document.addEventListener('DOMContentLoaded', () => app.init());
+    </script>
+</body>
+</html>
